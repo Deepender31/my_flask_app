@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Scraper with Charts</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            text-align: center;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .chart-container {
+            width: 600px;
+            margin: 50px auto;
+        }
+
+        #result {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        form {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1 style="text-align: center;">Job Scraper with Charts</h1>
+
+    <!-- Form for scraping new jobs -->
+    <form action="/scrape" method="POST" id="scrape-form">
+        <label for="skill">Enter Skill or Job Title:</label>
+        <input type="text" id="skill" name="skill" required>
+        <label for="sort">Sort By:</label>
+        <select id="sort" name="sort">
+            <option value="Relevance">Relevance</option>
+            <option value="Date">Date</option>
+        </select>
+        <label for="num_jobs">Number of Jobs:</label>
+        <input type="number" id="num_jobs" name="num_jobs" min="10" value="100" required>
+        <button type="submit">Scrape Jobs</button>
+    </form>
+
+    <!-- Form for uploading existing Excel file -->
+    <form enctype="multipart/form-data" id="upload-form">
+        <label for="job-file">Upload Existing Excel File:</label>
+        <input type="file" id="job-file" name="job_file" accept=".xlsx" required>
+        <button type="submit">Upload File</button>
+    </form>
+
+    <!-- Loading overlay -->
+    <div id="loading-overlay" class="overlay">
+        <div>Processing... Please wait.</div>
+    </div>
+
+    <!-- Result section -->
+    <div id="result"></div>
+
+    <!-- Chart containers -->
+    <div class="chart-container">
+        <canvas id="locationChart"></canvas>
+    </div>
+    <div class="chart-container">
+        <canvas id="industryChart"></canvas>
+    </div>
+    <div class="chart-container">
+        <canvas id="skillChart"></canvas>
+    </div>
+
+    <!-- Include Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        const scrapeForm = document.getElementById('scrape-form');
+        const uploadForm = document.getElementById('upload-form');
+        const overlay = document.getElementById('loading-overlay');
+
+        // Handle job scraping submission
+        scrapeForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            overlay.style.display = 'flex'; // Show overlay
+
+            const formData = new FormData(scrapeForm);
+            try {
+                const response = await fetch('/scrape', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error('Failed to fetch jobs');
+                
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    document.getElementById('result').textContent = result.message;
+                    renderCharts(result);
+                } else {
+                    throw new Error(result.message || 'An unknown error occurred');
+                }
+            } catch (error) {
+                document.getElementById('result').textContent = 'An error occurred: ' + error.message;
+            } finally {
+                overlay.style.display = 'none'; // Hide overlay
+            }
+        });
+
+        // Handle Excel file upload submission
+        uploadForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            overlay.style.display = 'flex'; // Show overlay
+
+            const formData = new FormData(uploadForm);
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error('Failed to upload the file');
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    document.getElementById('result').textContent = result.message;
+                    renderCharts(result);
+                } else {
+                    throw new Error(result.message || 'An unknown error occurred');
+                }
+            } catch (error) {
+                document.getElementById('result').textContent = 'An error occurred: ' + error.message;
+            } finally {
+                overlay.style.display = 'none'; // Hide overlay
+            }
+        });
+
+        // Function to render charts using Chart.js
+        function renderCharts(data) {
+            const ctx1 = document.getElementById('locationChart').getContext('2d');
+            const ctx2 = document.getElementById('industryChart').getContext('2d');
+            const ctx3 = document.getElementById('skillChart').getContext('2d');
+
+            // Location Chart (Bar Chart)
+            const locationChart = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: data.top_locations.map(location => location[0]),
+                    datasets: [{
+                        label: 'Number of Jobs',
+                        data: data.top_locations.map(location => location[1]),
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Industry Chart (Pie Chart)
+            const industryChart = new Chart(ctx2, {
+                type: 'pie',
+                data: {
+                    labels: data.top_industries.map(industry => industry[0]),
+                    datasets: [{
+                        label: 'Industries',
+                        data: data.top_industries.map(industry => industry[1]),
+                        backgroundColor: ['#ff6384', '#36a2eb', '#ffcd56', '#4bc0c0', '#9966ff'],
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true
+                }
+            });
+
+            // Skills Chart (Doughnut Chart)
+            const skillChart = new Chart(ctx3, {
+                type: 'doughnut',
+                data: {
+                    labels: data.top_skills.map(skill => skill[0]),
+                    datasets: [{
+                        label: 'Skills',
+                        data: data.top_skills.map(skill => skill[1]),
+                        backgroundColor: ['#ff6384', '#36a2eb', '#ffcd56', '#4bc0c0', '#9966ff'],
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true
+                }
+            });
+        }
+    </script>
+</body>
+</html>
